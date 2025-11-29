@@ -6,10 +6,28 @@ class ActionController:
     def __init__(self):
         # Mapeo de combinaciones: (Gesto Mano, Gesto Cara) -> Nombre de archivo
         self.combo_map = {
-            ("OPEN_PALM", "SURPRISED"): "./images/shocked.png",
+            # --- Grupo 1: Básicos (Rostro Neutral) ---
             ("THUMB_UP", "NEUTRAL"): "./images/like.png",
+            ("THUMB_DOWN", "NEUTRAL"): "./images/dislike.png",
+            ("FIST", "NEUTRAL"): "./images/rock.png",
+            ("PEACE", "NEUTRAL"): "./images/peace.png",
+            
+            # --- Grupo 2: Emociones (Sorpresa) ---
+            ("OPEN_PALM", "SURPRISED"): "./images/shocked.png",
+            ("POINT", "SURPRISED"): "./images/look_there.png",
             ("PEACE", "SURPRISED"): "./images/party.png",
-            ("FIST", "NEUTRAL"): "./images/babyfist.png"
+            
+            # --- Grupo 3: Positividad (Sonrisa) ---
+            ("THUMB_UP", "SMILE"): "./images/super_like.png",
+            ("OPEN_PALM", "SMILE"): "./images/hello.png",
+            ("PEACE", "SMILE"): "./images/happy_vibes.png",
+            ("POINT", "SMILE"): "./images/idea.png",
+            
+            # --- Grupo 4: Guiños (Interacción coqueta/secreta) ---
+            ("POINT", "WINK_LEFT"): "./images/secret.png",
+            ("POINT", "WINK_RIGHT"): "./images/target_locked.png",
+            ("FIST", "WINK_LEFT"): "./images/bro_fist.png",
+            ("OPEN_PALM", "WINK_RIGHT"): "./images/high_five.png"
         }
         
         # Cache de imágenes cargadas para no leer disco en cada frame

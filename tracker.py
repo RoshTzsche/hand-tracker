@@ -2,6 +2,10 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from actions import ActionController
+import os
+import re 
+
+
 
 class MultiModalSystem:
     def __init__(self):
@@ -97,26 +101,84 @@ class MultiModalSystem:
 
         return "UNKNOWN"
 
-    def classify_face(self, landmarks, w, h):
-        """Detecta sorpresa usando MAR (Mouth Aspect Ratio)"""
-        # Puntos del labio: 13 (Arriba), 14 (Abajo), 61 (Izq), 291 (Der)
-        top = np.array([landmarks[13].x * w, landmarks[13].y * h])
-        bot = np.array([landmarks[14].x * w, landmarks[14].y * h])
-        left = np.array([landmarks[61].x * w, landmarks[61].y * h])
-        right = np.array([landmarks[291].x * w, landmarks[291].y * h])
+    def _get_euclidean_distance(self, p1, p2):
+        """Calcula distancia euclidiana entre dos puntos (x, y)"""
+        return ((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)**0.5
 
-        height = np.linalg.norm(top - bot)
-        width = np.linalg.norm(left - right)
-
-        if width < 1: return "NEUTRAL" # Evitar división por cero
-
-        mar = height / width
+    def _calculate_ear(self, landmarks, indices, w, h):
+        """Calcula el Eye Aspect Ratio (Relación de Aspecto del Ojo)"""
+        # Puntos convertidos a coordenadas de pixel
+        coords = []
+        for idx in indices:
+            lm = landmarks[idx]
+            coords.append((lm.x * w, lm.y * h))
         
-        # Si la boca es casi la mitad de alta que de ancha -> Sorpresa
-        if mar > 0.45: 
-            return "SURPRISED"
-        return "NEUTRAL"
+        # Distancias verticales
+        d_v1 = self._get_euclidean_distance(coords[1], coords[5])
+        d_v2 = self._get_euclidean_distance(coords[2], coords[4])
+        
+        # Distancia horizontal
+        d_h = self._get_euclidean_distance(coords[0], coords[3])
+        
+        if d_h == 0: return 0.0
+        
+        # Fórmula EAR
+        return (d_v1 + d_v2) / (2.0 * d_h)
 
+    def classify_face(self, landmarks, w, h):
+        """
+        Clasificador Facial Expandido: 
+        Detecta: NEUTRAL, SURPRISED, SMILE, WINK_LEFT, WINK_RIGHT
+        """
+        # --- 1. Lógica de Sorpresa (MAR) ---
+        # Labios: 13, 14, 61, 291
+        top = (landmarks[13].x * w, landmarks[13].y * h)
+        bot = (landmarks[14].x * w, landmarks[14].y * h)
+        left = (landmarks[61].x * w, landmarks[61].y * h)
+        right = (landmarks[291].x * w, landmarks[291].y * h)
+
+        mouth_h = self._get_euclidean_distance(top, bot)
+        mouth_w = self._get_euclidean_distance(left, right)
+        
+        if mouth_w == 0: return "NEUTRAL"
+        mar = mouth_h / mouth_w
+
+        if mar > 0.45:
+            return "SURPRISED"
+
+        # --- 2. Lógica de Guiños (EAR) ---
+        # Índices MediaPipe para ojos (P1, P2, P3, P4, P5, P6)
+        # Ojo Izquierdo (desde la perspectiva de la cámara en espejo es el DERECHO real del usuario)
+        # Nota: Ajusta left/right según si usas espejo o no. Asumimos espejo.
+        left_eye_indices = [362, 385, 387, 263, 373, 380] 
+        right_eye_indices = [33, 160, 158, 133, 144, 153]
+
+        ear_left = self._calculate_ear(landmarks, left_eye_indices, w, h)
+        ear_right = self._calculate_ear(landmarks, right_eye_indices, w, h)
+        
+        blink_thresh = 0.2 # Umbral experimental
+
+        # Lógica exclusiva: Para ser guiño, un ojo cerrado y el otro abierto
+        if ear_left < blink_thresh and ear_right > blink_thresh:
+            return "WINK_LEFT" # Ojo izquierdo en pantalla cerrado
+        if ear_right < blink_thresh and ear_left > blink_thresh:
+            return "WINK_RIGHT"
+
+        # --- 3. Lógica de Sonrisa ---
+        # Una sonrisa suele ensanchar la boca sin abrirla tanto verticalmente como la sorpresa
+        # Usamos mouth_w relativo al ancho de la cara para normalizar
+        # Puntos de la cara extremos: 234 (oreja derecha pantalla), 454 (oreja izq pantalla)
+        face_left = (landmarks[234].x * w, landmarks[234].y * h)
+        face_right = (landmarks[454].x * w, landmarks[454].y * h)
+        face_width = self._get_euclidean_distance(face_left, face_right)
+
+        if face_width > 0:
+            smile_ratio = mouth_w / face_width
+            # Si la boca ocupa más del 40% del ancho de la cara y no es sorpresa
+            if smile_ratio > 0.42 and mar < 0.3: 
+                return "SMILE"
+        print(f"DEBUG: Ratio={smile_ratio:.2f} | MAR={mar:.2f}")
+        return "NEUTRAL"
     def overlay_image(self, background, overlay, x, y):
         """Superpone imagen con transparencia de forma segura"""
         if overlay is None or background is None: return background
@@ -153,24 +215,41 @@ class MultiModalSystem:
         return background
 
     def run(self):
-        cap = cv2.VideoCapture(0)
+        # 1. RESOLUCIÓN DE HARDWARE (Mapeo de Symlink a Índice)
+        # Tu ruta estable específica:
+        stable_path = "/dev/v4l/by-id/usb-Sonix_Technology_Co.__Ltd_USB_2.0_Camera_SN0001-video-index0"
+        camera_index = 0 # Fallback por defecto
 
+        if os.path.exists(stable_path):
+            # Resolvemos a dónde apunta el enlace (ej: /dev/video2)
+            real_path = os.path.realpath(stable_path)
+            try:
+                # Extraemos el número final de la cadena 'videoX'
+                camera_index = int(re.findall(r'\d+', real_path)[-1])
+                print(f"Cámara detectada en: {real_path} (Índice {camera_index})")
+            except IndexError:
+                print("No se pudo extraer el índice, usando 0 por defecto.")
+        else:
+            print(f"No se encontró la cámara Sonix en {stable_path}, usando índice 0.")
+
+        # 2. INICIALIZACIÓN DEL TRANSDUCTOR
+        # Usamos CAP_V4L2 explícitamente para mejor rendimiento en Fedora/Hyprland
+        cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
+
+        cap.set(cv2.CAP_PROP_FPS, 20)
+
+        cap.set(cv2.CAP_PROP_AUTO_WB, 1)
+       
         # --- CONFIGURACIÓN DE UI ---
-        # Definimos el nombre de la ventana primero
         window_name = 'Rosh Multimodal Tracker'
-        
-        # 1. WINDOW_NORMAL permite redimensionar la ventana (vital para Hyprland)
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        
-        # 2. Establecemos un tamaño inicial grande (ej. 1280x720 o 1920x1080)
         cv2.resizeWindow(window_name, 1280, 720)
-        
-        # 3. (Opcional) Si la quieres en pantalla completa directamente:
-        # cv2.setWindowProperty(window_name, cv2.WINDOW_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        # ----------------------------------
+
         while cap.isOpened():
             success, image = cap.read()
-            if not success: break
+            if not success:
+                print("Ignorando frame vacío de la cámara.")
+                continue
             
             # Espejo para que sea más natural
             image = cv2.flip(image, 1)
@@ -179,8 +258,11 @@ class MultiModalSystem:
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
             # --- PROCESAMIENTO ---
+            # Bloqueamos escritura en image_rgb para mejorar rendimiento en memoria
+            image_rgb.flags.writeable = False
             res_hands = self.hands.process(image_rgb)
             res_face = self.face_mesh.process(image_rgb)
+            image_rgb.flags.writeable = True
             
             hand_gesture = "UNKNOWN"
             face_expression = "NEUTRAL"
@@ -189,29 +271,13 @@ class MultiModalSystem:
             if res_hands.multi_hand_landmarks:
                 for hand_lms in res_hands.multi_hand_landmarks:
                     self.mp_draw.draw_landmarks(image, hand_lms, self.mp_hands.HAND_CONNECTIONS)
-                    
-                    # Convertir a pixeles
                     lm_list = [[id, int(lm.x * w), int(lm.y * h)] for id, lm in enumerate(hand_lms.landmark)]
-                    
-                    # Usar tu clasificador detallado
                     hand_gesture = self.classify_hand(lm_list)
 
             # 2. Analizar Cara
             if res_face.multi_face_landmarks:
                 for face_lms in res_face.multi_face_landmarks:
-                    
-                    # --- BLOQUE DE DIBUJO FACIAL ---
-                    
-                    # A. Dibujar la Malla (Red tecnológica)
-                    '''self.mp_draw.draw_landmarks(
-                        image=image,
-                        landmark_list=face_lms,
-                        connections=self.mp_face_mesh.FACEMESH_TESSELATION,
-                        landmark_drawing_spec=None,
-                        connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_tesselation_style()
-                    )'''
-
-                    # B. Dibujar los Contornos (Ojos, cejas, labios más marcados)
+                    # Dibujar contornos (más ligero visualmente que la malla completa)
                     self.mp_draw.draw_landmarks(
                         image=image,
                         landmark_list=face_lms,
@@ -219,17 +285,13 @@ class MultiModalSystem:
                         landmark_drawing_spec=None,
                         connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_contours_style()
                     )
-                    
                     face_expression = self.classify_face(face_lms.landmark, w, h)
-
 
             # --- LÓGICA DE ACCIÓN (OVERLAY) ---
             overlay_img = self.controller.get_overlay_image(hand_gesture, face_expression)
             
             if overlay_img is not None:
-                # Mostrar imagen en la esquina superior derecha
                 image = self.overlay_image(image, overlay_img, w - 220, 20)
-                
                 cv2.putText(image, "COMBO!", (w - 200, 240), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
@@ -238,7 +300,8 @@ class MultiModalSystem:
             cv2.putText(image, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             cv2.imshow(window_name, image)
-            if cv2.waitKey(5) & 0xFF == 27: break
+            if cv2.waitKey(5) & 0xFF == 27: # ESC para salir
+                break
             
         cap.release()
         cv2.destroyAllWindows()
