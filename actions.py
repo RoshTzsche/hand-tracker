@@ -1,106 +1,57 @@
 import time
-import subprocess
-import sys
+import os
+import cv2
 
 class ActionController:
     def __init__(self):
-        # Estado actual
-        self.current_gesture = "UNKNOWN"
-        self.gesture_start_time = 0
-        self.has_triggered = False  # Evita disparos múltiples mientras mantienes la mano
-
-        # --- CONFIGURACIÓN MATEMÁTICA DE TIEMPOS ---
-        
-        # 1. HOLD TIME: Tiempo (segundos) que debes MANTENER el gesto para activarlo
-        self.hold_map = {
-            "THUMB_UP": 4.0,    # Tu petición: 4 segundos para animación
-            "THUMB_DOWN": 1.0,  # 1 seg para volver al workspace anterior
-            "POINT": 0.5,       # Rápido para cambiar workspace
-            "OPEN_PALM": 2.0    # 2 seg para notificación
+        # Mapeo de combinaciones: (Gesto Mano, Gesto Cara) -> Nombre de archivo
+        self.combo_map = {
+            ("OPEN_PALM", "SURPRISED"): "./images/shocked.png",
+            ("THUMB_UP", "NEUTRAL"): "./images/like.png",
+            ("PEACE", "SURPRISED"): "./images/party.png",
+            ("FIST", "NEUTRAL"): "./images/babyfist.png"
         }
         
-        # 2. POST-COOLDOWN: Tiempo de "descanso" después de una ejecución exitosa
-        self.post_cooldown = 2.0 
-        self.last_execution_time = 0
+        # Cache de imágenes cargadas para no leer disco en cada frame
+        self.image_cache = {}
+        self._load_images()
 
-    def process_gesture(self, gesture):
+    def _load_images(self):
         """
-        Procesa el gesto actual y gestiona la máquina de estados de tiempo.
-        Retorna: Un valor float entre 0.0 y 1.0 indicando el progreso de 'carga'.
+        Carga imágenes y normaliza su formato a BGRA (4 canales) 
+        para evitar errores de 'not enough values to unpack'.
         """
-        current_time = time.time()
+        for key, filename in self.combo_map.items():
+            if os.path.exists(filename):
+                # 1. Cargar la imagen sin modificar flags (para detectar alpha si existe)
+                img = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
+                
+                if img is not None:
+                    # 2. Verificar canales
+                    # Si es RGB/BGR (3 canales), forzamos conversión a BGRA
+                    if len(img.shape) == 3 and img.shape[2] == 3:
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+                    
+                    # 3. Redimensionar para consistencia (opcional, pero recomendado)
+                    # Mantenemos un tamaño manejable (ej. 200px ancho)
+                    target_w = 200
+                    scale = target_w / img.shape[1]
+                    target_h = int(img.shape[0] * scale)
+                    img = cv2.resize(img, (target_w, target_h))
+                    
+                    self.image_cache[key] = img
+                    print(f"[Sistema] Imagen cargada: {filename} {img.shape}")
+                else:
+                    print(f"[Error] No se pudo leer la imagen: {filename}")
+            else:
+                pass 
+                # print(f"[Aviso] Falta imagen para combo: {key} -> {filename}")
 
-        # A. RESET DE ESTADO
-        # Si cambiamos de gesto o perdemos la mano, reseteamos el cronómetro
-        if gesture != self.current_gesture:
-            self.current_gesture = gesture
-            self.gesture_start_time = current_time
-            self.has_triggered = False
-            return 0.0
 
-        # B. VALIDACIÓN DE COOLDOWN POST-EJECUCIÓN
-        # Si acabamos de disparar una acción, ignoramos todo hasta que pase el tiempo de enfriamiento
-        if (current_time - self.last_execution_time) < self.post_cooldown:
-            return 0.0
-
-        # C. SI EL GESTO ES "UNKNOWN", NO HACEMOS NADA
-        if gesture == "UNKNOWN":
-            return 0.0
-
-        # D. CÁLCULO DE TIEMPO ACUMULADO (INTEGRACIÓN)
-        elapsed_time = current_time - self.gesture_start_time
-        required_hold = self.hold_map.get(gesture, 3.0) # Default 3s si no está en lista
-
-        # Calculamos progreso (0.0 a 1.0) para visualización
-        progress = min(elapsed_time / required_hold, 1.0)
-
-        # Imprimir barra de carga en terminal (Feedback visual estilo Linux)
-        self._print_progress_bar(gesture, progress)
-
-        # E. DISPARO DE ACCIÓN (TRIGGER)
-        if elapsed_time >= required_hold and not self.has_triggered:
-            self._execute_action(gesture)
-            self.has_triggered = True # Bloqueamos para que no se repita en loop
-            self.last_execution_time = current_time # Iniciamos cooldown post-acción
-            print("\n") # Salto de línea limpio tras la barra de carga
-
-        return progress
-
-    def _print_progress_bar(self, gesture, progress):
-        """Dibuja una barra de carga en la terminal"""
-        bar_len = 30
-        filled_len = int(bar_len * progress)
-        bar = '█' * filled_len + '-' * (bar_len - filled_len)
-        sys.stdout.write(f'\r[{bar}] {int(progress * 100)}% : {gesture}   ')
-        sys.stdout.flush()
-
-    def _execute_action(self, gesture):
-        print(f"\n>>> ¡ACCIÓN EJECUTADA!: {gesture}")
-        
-        if gesture == "THUMB_UP":
-            self.run_animation_script()
-            
-        elif gesture == "THUMB_DOWN":
-            subprocess.run("hyprctl dispatch workspace m-1", shell=True)
-            
-        elif gesture == "POINT":
-            subprocess.run("hyprctl dispatch workspace m+1", shell=True)
-            
-        elif gesture == "OPEN_PALM":
-            subprocess.Popen(['notify-send', 'System', 'Gesto Mantenido Completado'])
-
-    def run_animation_script(self):
-        try:
-            #subprocess.Popen(['notify-send', '-u', 'critical', 'ANIMATION', 'Starting...'])
-            # Aquí va tu script real
-             subprocess.Popen(['python3', 'animacion.py'])
-        except Exception as e:
-            print(f"Error: {e}")
-
-    def run_hyprland_command(self, command):
-        """Envía comandos a hyprctl"""
-        try:
-            # shell=True permite argumentos complejos, pero cuidado con la inyección si usaras inputs externos
-            subprocess.run(f"hyprctl {command}", shell=True)
-        except Exception as e:
-            print(f"Error comunicando con Hyprland: {e}")
+    def get_overlay_image(self, hand_gesture, face_expression):
+        """
+        Devuelve la imagen (array numpy) correspondiente a la combinación,
+        o None si no hay match.
+        """
+        key = (hand_gesture, face_expression)
+        return self.image_cache.get(key, None)
