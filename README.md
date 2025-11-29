@@ -15,8 +15,9 @@ Este proyecto utiliza **MediaPipe** para la inferencia geométrica y **OpenCV** 
 ## 🛠️ Requisitos del Sistema
 
 * **Sistema Operativo:** Linux (Probado en Fedora 42 con Hyprland).
-* **Python:** 3.8 o superior.
-* **Hardware:** Webcam funcional (Código optimizado para dispositivos V4L2).
+* **Python:** Versión 3.8 a 3.11.
+    * *Nota importante:* El proyecto fue desarrollado y validado en **Python 3.11**. Versiones superiores (3.12+) presentan incompatibilidades con algunas dependencias (específicamente `mediapipe`/`distutils`) a fecha de Noviembre 2025.
+* **Hardware:** Webcam funcional.
 
 ## 📦 Instalación
 
@@ -55,7 +56,7 @@ El sistema requiere una carpeta específica para los recursos gráficos que **no
     mkdir images
     ```
 
-2.  Añade archivos `.png` dentro de esa carpeta. Para que el sistema funcione, los nombres de archivo deben coincidir con los definidos en `actions.py`. Asegúrate de tener las siguientes imágenes:
+2.  Añade archivos `.png` dentro de esa carpeta. Para que el sistema funcione, los nombres de archivo deben coincidir con los definidos a continuación (o puedes modificar las rutas en `actions.py`). Asegúrate de tener las siguientes imágenes:
 
       * **Básicos:** `like.png`, `dislike.png`, `rock.png`, `peace.png`
       * **Emociones:** `shocked.png`, `look_there.png`, `party.png`
@@ -100,12 +101,6 @@ Para iniciar el sistema principal de rastreo:
 python tracker.py
 ```
 
-Para probar la animación de onda (módulo independiente):
-
-```bash
-python animacion.py
-```
-
 ### Controles
 
   * **ESC:** Cerrar la ventana y terminar el programa.
@@ -129,7 +124,6 @@ stable_path = "/ruta/a/tu/camara"
 ```text
 hand-tracker/
 ├── actions.py       # Controlador de lógica de combos y carga de imágenes
-├── animacion.py     # Módulo experimental de visualización con Matplotlib
 ├── tracker.py       # Punto de entrada principal (Loop de visión)
 ├── images/          # [TÚ DEBES CREAR ESTO] Carpeta de recursos PNG
 ├── .gitignore       # Configuración de exclusión de git
