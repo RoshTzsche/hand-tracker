@@ -91,7 +91,8 @@ Utilizamos la métrica estándar EAR para determinar la apertura del ojo. Se con
 $$EAR = \frac{||p_2 - p_6|| + ||p_3 - p_5||}{2 \cdot ||p_1 - p_4||}$$
 
 El sistema detecta un guiño intencional comparando los EAR de ambos ojos:
-$$\text{Si } (EAR_{left} < 0.2 \land EAR_{right} > 0.2) \implies \text{WINK\_LEFT}$$
+
+$$Si (EAR_{left} < 0.2 \land EAR_{right} > 0.2) \implies \text{WINK\_LEFT}$$
 
 ## 🎮 Uso
 
