@@ -28,12 +28,15 @@ class ActionController:
             # --- Group 3: Positive / Smile Combos ---
             ("THUMB_UP",   "SMILE"):     os.path.join(self.images_dir, "like_mouth.jpg"),
             ("OPEN_PALM",  "SMILE"):     os.path.join(self.images_dir, "palm_smile.png"),
+            ("POINT",      "SMILE"):     os.path.join(self.images_dir, "point_neutral.png"),
             ("PEACE",      "SMILE"):     os.path.join(self.images_dir, "peace_smile.png"),
+
             ("POINT",      "SMILE"):     os.path.join(self.images_dir, "point_neutral.png"),
 
+            ("POINT",      "NEUTRAL"):     os.path.join(self.images_dir, "nerd.jpg"),
             # --- Group 4: Wink / Secret Combos ---
-            ("POINT",      "WINK_LEFT"):  os.path.join(self.images_dir, "secret.png"),
-            ("POINT",      "WINK_RIGHT"): os.path.join(self.images_dir, ".png"),
+            ("POINT",      "WINK_LEFT"):  os.path.join(self.images_dir, "nerd.jpg"),
+            ("POINT",      "WINK_RIGHT"): os.path.join(self.images_dir, "nerd.jpg"),
             ("FIST",       "WINK_LEFT"):  os.path.join(self.images_dir, "bro_fist.png"),
             ("OPEN_PALM",  "WINK_RIGHT"): os.path.join(self.images_dir, "high_five.png"),
         }
